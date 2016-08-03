@@ -29,13 +29,12 @@ ConfigureStep() {
     --cross-prefix=${NACL_CROSS_PREFIX}- \
     --target-os=linux \
     --disable-everything \
-    --enable-gpl \
     --enable-static \
     --enable-cross-compile \
-    --enable-decoder=aac,h264,mjpeg,mpeg2video,mpeg4 \
-    --enable-encoder=aac,mpeg4,libx264 \
+    --enable-decoder=aac,h264,mjpeg,mpeg2video,mpeg4,pcm_mulaw \
+    --enable-encoder=aac,mpeg4 \
     --enable-protocol=concat,file \
-    --enable-demuxer=aac,avi,h264,image2,matroska,pcm_s16le,mov,m4v,rawvideo,wav \
+    --enable-demuxer=aac,avi,h264,image2,matroska,pcm_s16le,pcm_mulaw,mov,m4v,rawvideo,wav \
     --enable-muxer=h264,ipod,mov,mp4 \
     --enable-parser=aac,h264,mjpeg,mpeg4video,mpegaudio,mpegvideo,png \
     --enable-bsf=aac_adtstoasc \
