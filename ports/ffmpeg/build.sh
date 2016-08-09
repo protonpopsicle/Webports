@@ -39,6 +39,7 @@ ConfigureStep() {
     --enable-parser=aac,h264,mjpeg,mpeg4video,mpegaudio,mpegvideo,png \
     --enable-bsf=aac_adtstoasc \
     --enable-filter=transpose \
+    --enable-avresample \
     --prefix=${PREFIX} \
     ${extra_args}
 }
