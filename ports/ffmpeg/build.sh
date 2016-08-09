@@ -32,7 +32,7 @@ ConfigureStep() {
     --enable-static \
     --enable-cross-compile \
     --enable-decoder=aac,h264,mjpeg,mpeg2video,mpeg4,pcm_mulaw \
-    --enable-encoder=aac,mpeg4 \
+    --enable-encoder=aac,mpeg4,mjpeg \
     --enable-protocol=concat,file \
     --enable-demuxer=aac,avi,h264,image2,matroska,pcm_s16le,pcm_mulaw,mov,m4v,rawvideo,wav \
     --enable-muxer=h264,ipod,mov,mp4 \
