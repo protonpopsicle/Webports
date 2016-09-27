@@ -58,61 +58,93 @@ index 5f9fc49..4ced898 100644
  
  #define avpriv_atomic_ptr_cas atomic_ptr_cas_gcc
 diff --git a/libavformat/rtsp.c b/libavformat/rtsp.c
-index c6292c5..2ec029c 100644
+index c6292c5..9de24fc 100644
 --- a/libavformat/rtsp.c
 +++ b/libavformat/rtsp.c
-@@ -97,6 +97,8 @@ const AVOption ff_rtsp_options[] = {
+@@ -78,6 +78,7 @@
+     { "reorder_queue_size", "set number of packets to buffer for handling of reordered packets", OFFSET(reordering_queue_size), AV_OPT_TYPE_INT, { .i64 = -1 }, -1, INT_MAX, DEC }, \
+     { "buffer_size",        "Underlying protocol send/receive buffer size",                  OFFSET(buffer_size),           AV_OPT_TYPE_INT, { .i64 = -1 }, -1, INT_MAX, DEC|ENC } \
+ 
++#define URISTR(s) (s ? s : "")
+ 
+ const AVOption ff_rtsp_options[] = {
+     { "initial_pause",  "do not start playing the stream immediately", OFFSET(initial_pause), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DEC },
+@@ -97,6 +98,10 @@ const AVOption ff_rtsp_options[] = {
      { "stimeout", "set timeout (in microseconds) of socket TCP I/O operations", OFFSET(stimeout), AV_OPT_TYPE_INT, {.i64 = 0}, INT_MIN, INT_MAX, DEC },
      COMMON_OPTS(),
      { "user-agent", "override User-Agent header", OFFSET(user_agent), AV_OPT_TYPE_STRING, {.str = LIBAVFORMAT_IDENT}, 0, 0, DEC },
 +    { "ca_file", "Certificate Authority database file", OFFSET(ca_file), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, DEC|ENC },
 +    { "tls_verify", "Verify the peer certificate", OFFSET(verify), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, DEC|ENC},
++    { "cert_file", "Certificate file", OFFSET(cert_file), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, DEC|ENC },
++    { "key_file", "Private key file", OFFSET(key_file),  AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, DEC|ENC },
      { NULL },
  };
  
-@@ -1812,9 +1814,25 @@ redirect:
+@@ -1812,9 +1817,17 @@ redirect:
      } else {
          int ret;
          /* open the tcp connection */
 -        ff_url_join(tcpname, sizeof(tcpname), lower_rtsp_proto, NULL,
 -                    host, port,
 -                    "?timeout=%d", rt->stimeout);
-+        if (strncmp("tls", lower_rtsp_proto, 3) == 0) {
-+            if (rt->ca_file != NULL) {
-+                ff_url_join(tcpname, sizeof(tcpname), lower_rtsp_proto, NULL,
-+                            host, port,
-+                            "?timeout=%d&verify=%d&cafile=%s",
-+                            rt->stimeout, rt->verify, rt->ca_file);
-+            } else {
-+                ff_url_join(tcpname, sizeof(tcpname), lower_rtsp_proto, NULL,
-+                                host, port,
-+                                "?timeout=%d&verify=%d",
-+                                rt->stimeout, rt->verify);
-+            }
++        if (strcmp("tls", lower_rtsp_proto) == 0) {
++            ff_url_join(tcpname, sizeof(tcpname), lower_rtsp_proto, NULL,
++                        host, port,
++                        "?timeout=%d&verify=%d&cafile=%s&cert_file=%s&key_file=%s",
++                        rt->stimeout, rt->verify, URISTR(rt->ca_file),
++                        URISTR(rt->cert_file), URISTR(rt->key_file));
 +        } else {
 +            ff_url_join(tcpname, sizeof(tcpname), lower_rtsp_proto, NULL,
 +                        host, port,
 +                        "?timeout=%d", rt->stimeout);
 +        }
-+        av_log(NULL, AV_LOG_INFO, "tcpname='%s'\n", tcpname);
-+
          if ((ret = ffurl_open_whitelist(&rt->rtsp_hd, tcpname, AVIO_FLAG_READ_WRITE,
                         &s->interrupt_callback, NULL, s->protocol_whitelist, s->protocol_blacklist, NULL)) < 0) {
              err = ret;
 diff --git a/libavformat/rtsp.h b/libavformat/rtsp.h
-index 852fd67..84881ba 100644
+index 852fd67..fa872a8 100644
 --- a/libavformat/rtsp.h
 +++ b/libavformat/rtsp.h
-@@ -408,6 +408,9 @@ typedef struct RTSPState {
+@@ -408,6 +408,14 @@ typedef struct RTSPState {
  
      char default_lang[4];
      int buffer_size;
 +
++    /** The following are used for RTSPS streams */
++    //@{
 +    char *ca_file;
 +    int verify;
++    char *cert_file;
++    char *key_file;
++    //@}
  } RTSPState;
  
  #define RTSP_FLAG_FILTER_SRC  0x1    /**< Filter incoming UDP packets -
+diff --git a/libavformat/tls_gnutls.c b/libavformat/tls_gnutls.c
+index 991b36b..ecc80bf 100644
+--- a/libavformat/tls_gnutls.c
++++ b/libavformat/tls_gnutls.c
+@@ -235,6 +235,12 @@ static int tls_write(URLContext *h, const uint8_t *buf, int size)
+     return print_tls_error(h, ret);
+ }
+ 
++static int tls_get_file_handle(URLContext *h)
++{
++    TLSContext *c = h->priv_data;
++    return ffurl_get_file_handle(c->tls_shared.tcp);
++}
++
+ static const AVOption options[] = {
+     TLS_COMMON_OPTIONS(TLSContext, tls_shared),
+     { NULL }
+@@ -253,6 +259,7 @@ const URLProtocol ff_tls_gnutls_protocol = {
+     .url_read       = tls_read,
+     .url_write      = tls_write,
+     .url_close      = tls_close,
++    .url_get_file_handle = tls_get_file_handle,
+     .priv_data_size = sizeof(TLSContext),
+     .flags          = URL_PROTOCOL_FLAG_NETWORK,
+     .priv_data_class = &tls_class,
 diff --git a/libavformat/tls_openssl.c b/libavformat/tls_openssl.c
 index 46eb3e6..1455392 100644
 --- a/libavformat/tls_openssl.c
@@ -131,6 +163,56 @@ index 46eb3e6..1455392 100644
      TLS_COMMON_OPTIONS(TLSContext, tls_shared),
      { NULL }
 @@ -301,6 +307,7 @@ const URLProtocol ff_tls_openssl_protocol = {
+     .url_read       = tls_read,
+     .url_write      = tls_write,
+     .url_close      = tls_close,
++    .url_get_file_handle = tls_get_file_handle,
+     .priv_data_size = sizeof(TLSContext),
+     .flags          = URL_PROTOCOL_FLAG_NETWORK,
+     .priv_data_class = &tls_class,
+diff --git a/libavformat/tls_schannel.c b/libavformat/tls_schannel.c
+index c11b7d4..065dccb 100644
+--- a/libavformat/tls_schannel.c
++++ b/libavformat/tls_schannel.c
+@@ -577,6 +577,12 @@ done:
+     return ret < 0 ? ret : outbuf[1].cbBuffer;
+ }
+ 
++static int tls_get_file_handle(URLContext *h)
++{
++    TLSContext *c = h->priv_data;
++    return ffurl_get_file_handle(c->tls_shared.tcp);
++}
++
+ static const AVOption options[] = {
+     TLS_COMMON_OPTIONS(TLSContext, tls_shared),
+     { NULL }
+@@ -595,6 +601,7 @@ const URLProtocol ff_tls_schannel_protocol = {
+     .url_read       = tls_read,
+     .url_write      = tls_write,
+     .url_close      = tls_close,
++    .url_get_file_handle = tls_get_file_handle,
+     .priv_data_size = sizeof(TLSContext),
+     .flags          = URL_PROTOCOL_FLAG_NETWORK,
+     .priv_data_class = &tls_class,
+diff --git a/libavformat/tls_securetransport.c b/libavformat/tls_securetransport.c
+index 253c89c..bc8a320 100644
+--- a/libavformat/tls_securetransport.c
++++ b/libavformat/tls_securetransport.c
+@@ -375,6 +375,12 @@ static int tls_write(URLContext *h, const uint8_t *buf, int size)
+     return print_tls_error(h, ret);
+ }
+ 
++static int tls_get_file_handle(URLContext *h)
++{
++    TLSContext *c = h->priv_data;
++    return ffurl_get_file_handle(c->tls_shared.tcp);
++}
++
+ static const AVOption options[] = {
+     TLS_COMMON_OPTIONS(TLSContext, tls_shared),
+     { NULL }
+@@ -393,6 +399,7 @@ const URLProtocol ff_tls_securetransport_protocol = {
      .url_read       = tls_read,
      .url_write      = tls_write,
      .url_close      = tls_close,
